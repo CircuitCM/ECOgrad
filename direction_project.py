@@ -264,10 +264,10 @@ def plot_ecg_scene(
     #pl.camera.zoom('tight')
     pl.show(title=title)
 
-import numba as nb
+#import numba as nb
 
 
-@nb.njit(fastmath=True, cache=True)
+#@nb.njit(fastmath=True, cache=True)
 def cosine_range(v, u, ghat, sin_er, mmat):
     w=1-mt.sqrt(1-sin_er**2)
     # cgu=u.dot(ghat)/(l2(u)*l2(ghat))
