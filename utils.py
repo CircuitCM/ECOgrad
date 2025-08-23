@@ -4,7 +4,7 @@ from typing import Callable
 
 import numpy as np
 
-import mpmath as mpm
+import scipy.special as sp
 import math
 
 def alpha_to_sigma(alpha: float,side2=True) -> float:
@@ -16,7 +16,7 @@ def alpha_to_sigma(alpha: float,side2=True) -> float:
     # Invert the two‐sided confidence:
     #   erf(k/√2) = 1 – α
     # ⇒ k = √2 · erfinv(1 – α)
-    return math.sqrt(2) * mpm.erfinv(1 - (1 if side2 else 2)*alpha)
+    return math.sqrt(2) * sp.erfinv(1 - (1 if side2 else 2)*alpha)
 
 _2ri= 1./mt.sqrt(2.0)
 
@@ -126,7 +126,7 @@ def marks_reset_factor(cn,ugh, ngh, v, c, d, a=3., sig=0., b=1.,t_buffer=True,r=
         lcn=2*mt.log(cn)
         s = max(lcn / lgdi, 2.) - 1  # DoF or sample size for t-dist
         at= FastT_V1(a, s) ** 2.
-        at = min(at, di2)  # protect by hard lower bound
+        #at = min(at, di2)  # protect by hard lower bound
         cr=dev_rate -at*lam2_tol - sigma2
         return max(cr,r/3)
 
@@ -146,11 +146,11 @@ def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=
     :return: 
     """
     #if ngh == 0.: ngh = v #It's the first sample vector
+    a = min(a, mt.sqrt(d))  # protect gaussian upper bound, however the approximator may still have onset asymmetry so we t-dist using protected gauss and DoF.
     if c==1.:return -1. #also the first sample vector
     if t_buffer:
         s = max(2.*mt.log(c) / mt.log1p(-1 / d), 2.) - 1.  # in production we will only calculate this after a reset occurs only, and increment otherwise.
         a= FastT_V1(a, s)
-    a = min(a, mt.sqrt(d)) #protect by hard lower bound
     if ngh == 0.: ngh = v
     c2 = c * c
     gamult = ((ngh * a) ** 2) * c2 / (d * (1 - c2))  # gamma/gradient expectation interval
@@ -163,6 +163,8 @@ def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=
     
 
 def marks_shrinkage_reset_solution(ugh, ngh, v, c, d, a=3., sig=0., b=1.,r=-2,t_buffer=True,max_iters=12,co_tol=1e-6):
+    od=d
+    #d=100
     if ngh==0.: c,max(2 * mt.log(c) / mt.log1p(-1 / d), 2.)
     m_op=(marks_reset_factor,ugh,ngh,v,c,d,a,sig,b,t_buffer,-abs(r))
     mnc =1.#max(1. + min(-1 / d + 1e-15, 0.), .9999)
@@ -189,12 +191,12 @@ def marks_shrinkage_reset_solution(ugh, ngh, v, c, d, a=3., sig=0., b=1.,r=-2,t_
         #         #print('Second Search Failed.')
         #     #else: #it didnt succeed we rely on the t-limit result
         #     #print('Launching on t_buffer c after:', cn,'new mr',marks_ratio(ugh,ngh,v,cn,d,a,sig,b,t_buffer))
-    
+
+    d=od
     lstc,ls=1-1/d,2.
     if reasn == 2: #reason 2 happens because no roots were found between 0 and 1.
         return lstc, ls
     s = max(2 * mt.log(cn) / mt.log1p(-1 / d), 2.,)
-    
     return min(cn,lstc), max(s,ls) #it's barely meaningful to reset as a fraction less than 2 DoF, this also acts as a generic shrinkage smoothing bound for partial resets. In the t_buffered case this bound is basically never hit which confirms the cutoff. At very low dimension count <10, you can experiment with loosing these cutoffs.
 
 def shrink_gradestimate(g,cn,c):
@@ -203,17 +205,28 @@ def shrink_gradestimate(g,cn,c):
 
 
 def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, sign=1):
-    """A bracketed secant method that achieves better performance by knowing the sign of the function to the left and right of the root. It also allows us to choose the slope of our root in a multi root scenario.
+    """A bracketed secant method that achieves (empirically) faster convergence by knowing the sign of the function to the left and right of the root.
+    It also allows us to choose the slope of our root in a multi root scenario.
 
-     The secant points use the two most recent points, instead of the updated lo hi brackets, this typically gets the most out of the secant method, while still guaranteeing convergence with bisection bracketing. Assume we know only which lo or hi has a positive sign with regards to the general problem, if left side is positive we are seeking a negatively sloped root sign:=-1 vice versa for right side and positive slope root. Then until the first time sign(value)==-1, we only take a bracketing step; this strategy allows us to converge to a root that has a sign congruent slope in a multi root situation. Eg in a convex problem to a -(slope) root this will always be the left root.
+     The secant points use the two most recent points, instead of the updated lo hi brackets, this typically gets the most out of the secant method,
+     while still guaranteeing convergence with bisection bracketing. Assume we know only which lo or hi has a positive sign with regards to
+     the general problem, if left side is positive we are seeking a negatively sloped root sign:=-1 vice versa for right side and positive slope root.
+     Then until the first time sign(value)==-1, we only take a bracketing step; this strategy allows us to converge to a root that has a sign congruent
+     slope in a multi root situation. Eg in a convex problem to a -(slope) root this will always be the left root.
 
-    Other Notes: Convergence is always guaranteed when there is a single root with congruent sign in the bracket. However the likelihood of converging to a congruent root, is still very high due to the initial side rejection strategy explained above, by decreasing the bracketing increment to a range that guarantees sampling a basin br_rate <.5, you once more recover guaranteed convergence to the signed root.
+    Other Notes: Convergence is always guaranteed when there is a single root with congruent sign in the bracket.
+    However the likelihood of converging to a congruent root, is still very high due to the initial side rejection strategy explained above,
+    by decreasing the bracketing increment to a range that guarantees sampling a basin br_rate <.5, you once more recover guaranteed
+    convergence to the signed root.
 
     Variable calculations are all f64.
 
     :param f_op: Can be a function or a function operator (tuple) that includes its arguments. It receives a single scalar value for the point estimate. 
-     :param br_rate: (0,1). The bracket increment, at .5 it's classic bisection, if you expect roots to be clustered on the right then >.5 might be suitable. Left clustered <.5. But a smaller br_rate should always have more definite convergence.
-    :param sign: =1 we expect to have f(lo)<f(root)<f(hi). if -1 we expect f(lo)>f(root)>f(hi). If this expectation is unknown, it controls the bracketing bias eg if f is all positives and sign=1, then the bracket will reduce from right to left at (1 - br_rate) until reaching hi, if negatives and sign=1 then left to right at br_rate. Note: If both sides are wrong then convergence will not occur in the single root case.
+     :param br_rate: (0,1). The bracket increment, at .5 it's classic bisection, if you expect roots to be clustered on the right then >.5 might be suitable.
+     Left clustered <.5. But a smaller br_rate should always have more definite convergence.
+    :param sign: =1 we expect to have f(lo)<f(root)<f(hi). if -1 we expect f(lo)>f(root)>f(hi). If this expectation is unknown,
+    it controls the bracketing bias eg if f is all positives and sign=1, then the bracket will reduce from right to left at (1 - br_rate) until
+    reaching hi, if negatives and sign=1 then left to right at br_rate. Note: If both sides are wrong then convergence will not occur in the single root case.
 
     """
     fo, f = op_call_args(f_op, lo), op_call_args(f_op, hi)
