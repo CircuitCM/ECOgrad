@@ -21,7 +21,7 @@ def alpha_to_sigma(alpha: float,side2=True) -> float:
     # ⇒ k = √2 · erfinv(1 – α)
     return math.sqrt(2) * sp.erfinv(1 - (1 if side2 else 2)*alpha)
 
-@nbu.rgi
+@nbu.rgic
 def marks_reset_factor(cn,ugh, ngh, v, c, d, a=3., sig=0., b=1.,t_buffer=True,r=-2.):
     """
     
@@ -62,7 +62,7 @@ def marks_reset_factor(cn,ugh, ngh, v, c, d, a=3., sig=0., b=1.,t_buffer=True,r=
         cr=dev_rate -at*lam2_tol - sigma2
         return max(cr,r/3)
 
-@nbu.rgi
+@nbu.rgic
 def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=False):
     """
     Extended Marks ratio, includes the noise factor and student's t interval buffer for initial eigen value/predictor asymmetry. We also use the arithmetic form, so > 0 implies anomaly instead of >1.
@@ -96,36 +96,28 @@ def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=
 
 @nbu.jtc
 def marks_shrinkage_reset_solution(ugh, ngh, v, c, d, a=3., sig=0., b=1.,r=-2,t_buffer=True,max_iters=12,co_tol=1e-6):
-    od=d
-    #d=100
     if ngh==0.: c,max(2 * mt.log(c) / mt.log1p(-1 / d), 2.)
     m_op=(marks_reset_factor,ugh,ngh,v,c,d,a,sig,b,t_buffer,-abs(r))
     mnc =1.#max(1. + min(-1 / d + 1e-15, 0.), .9999)
-    if (ugh+v)<abs(ugh-v): #Tends to be more well behaved because shrinkage will be more effective so boosted bracketing rate.
-        #print(f'Negative Solution Args: ', ", ".join(str(i) for i in (ugh, ngh, v, c, d, a, sig, b, t_buffer, -abs(r))))
-        cn,lcn,hcn,reasn=signseeking_secant_v2(m_op,c,mnc,br_rate=2/3,er_tol=co_tol,max_iters=max_iters,sign=-1)
-        #print('negative curvature solution. c:',c,'lcn:',lcn,'hcn:',hcn,'reason:',reasn)
-    else: #otherwise there could be two or even three roots if t_buffer is true. So take it slower. Maybe even 1/3
-        
-        #print(f'Positive Solution Args: ',", ".join(str(i) for i in (ugh,ngh,v,c,d,a,sig,b,t_buffer,-abs(r))))
-        cn, lcn, hcn, reasn=signseeking_secant_v2(m_op, c, mnc, br_rate=4/9, er_tol=co_tol, max_iters=max_iters,sign=-1)
-        #print('positive curvature solution. c:',c,'lcn:',lcn,'hcn:',hcn,'reason:',reasn)
-    
-        # ##Note it turns out this third root scenario is so rare empirically I've never seen it actually happen, so I'm commenting out.
-        # if t_buffer and (mnc - (lcn + hcn) / 2.) < .01 and reasn < 2:
-        #     #We need to check that this didn't land on the 3rd t-limit left root
-        #     #print('Launching on t_buffer c before:',cn,c,lcn,'marks ratio',marks_ratio(ugh,ngh,v,hcn,d,a,sig,b,t_buffer),'ugh',ugh,'v',v,'ngh',ngh,)
-        #     cn2, lcn2, hcn2, reasn2 = signseeking_secant_v2(m_op, c, lcn, br_rate=2 / 3, er_tol=1e-6, max_iters=max_iters,sign=-1)
-        #     if reasn2<2:#then it succeeded
-        #         cn=cn2
-        #         reasn=reasn2
-        #         #print('Second Search succeeded.')
-        #     else:pass
-        #         #print('Second Search Failed.')
-        #     #else: #it didnt succeed we rely on the t-limit result
-        #     #print('Launching on t_buffer c after:', cn,'new mr',marks_ratio(ugh,ngh,v,cn,d,a,sig,b,t_buffer))
+    if (ugh+v)<abs(ugh-v):br_rate=2/3 #Tends to be more well behaved because shrinkage will be more effective so boosted bracketing rate.
+    else:br_rate=4/9 #otherwise there is an increased chance of multiple roots so take it slower
+    #print(f' Solution Args: ', ", ".join(str(i) for i in (ugh, ngh, v, c, d, a, sig, b, t_buffer, -abs(r))))
+    cn,lcn,hcn,reasn=signseeking_secant_v2(m_op,c,mnc,br_rate=br_rate,er_tol=co_tol,max_iters=max_iters,sign=-1)
+    #print('positive curvature solution. c:',c,'lcn:',lcn,'hcn:',hcn,'reason:',reasn)
 
-    d=od
+    # ##Note it turns out this third root scenario is so rare empirically, that I've never seen it actually happen, so I'm commenting out.
+    # if t_buffer and (mnc - (lcn + hcn) / 2.) < .01 and reasn < 2:
+    #     #We need to check that this didn't land on the 3rd t-limit left root
+    #     #print('Launching on t_buffer c before:',cn,c,lcn,'marks ratio',marks_ratio(ugh,ngh,v,hcn,d,a,sig,b,t_buffer),'ugh',ugh,'v',v,'ngh',ngh,)
+    #     cn2, lcn2, hcn2, reasn2 = signseeking_secant_v2(m_op, c, lcn, br_rate=2 / 3, er_tol=1e-6, max_iters=max_iters,sign=-1)
+    #     if reasn2<2:#then it succeeded
+    #         cn=cn2
+    #         reasn=reasn2
+    #         #print('Second Search succeeded.')
+    #     else:pass
+    #         #print('Second Search Failed.')
+    #     #else: #it didnt succeed we rely on the t-limit result
+    #     #print('Launching on t_buffer c after:', cn,'new mr',marks_ratio(ugh,ngh,v,cn,d,a,sig,b,t_buffer))
     lstc,ls=1-1/d,2.
     if reasn == 2: #reason 2 happens because no roots were found between 0 and 1.
         return lstc, ls
@@ -139,9 +131,9 @@ def shrink_gradestimate(g,cn,c):
 @nbu.rg
 def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, sign=1):
     """A bracketed secant method that achieves (empirically) faster convergence by knowing the sign of the function to the left and right of the root.
-    It also allows us to select if the slope of our root is positive or negative when there are multiple.
+    It also allows us to select if the slope of our root is positive or negative when there are multiple roots.
 
-    The secant points use the two most recent points, instead of the updated lo hi brackets, this typically gets the most out of the secant method,
+    The secant method uses the two most recent points, instead of the updated lo hi brackets, this typically gets the most out of the secant method,
     while still guaranteeing convergence with bisection bracketing. Assume we know only which lo or hi has a positive sign with regards to
     the general problem, if left side is positive we are seeking a negatively sloped root sign:=-1 vice versa for right side and positive slope root.
     Then until the first time sign(value)==-1, we only take a bracketing step; this strategy allows us to converge to a root that has a sign congruent
@@ -177,7 +169,7 @@ def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, si
     
 
     #we flip our problems sign for negative roots so that lo bracket is always -, and hi always +.
-    ict = np.int64(max_iters)
+    ict = int(max_iters)
     while ict > 0:
         fd = (f - fo)
         fo = f
@@ -194,7 +186,7 @@ def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, si
 
         f = nbu.op_call_args(f_op,lam)
         op_bracket= op_bracket or f < 0.
-        if sign == -1: f = -f
+        if sign == -1: f = -f #possible we don't need this and can replace with a single sign branch for the lo hi assignment.
         ict -= 1
 
         if f > 0.:
@@ -205,7 +197,7 @@ def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, si
 
     return lam,lo,hi,2 if not op_bracket else 1 if ict==0 else 0
 
-@nbu.jtc
+@nbu.rgic
 def calc_info(g_est: np.ndarray, g: np.ndarray,gn2:float, infor: np.ndarray) -> None:
     """
     Compute metrics between true vector x and estimator y.
@@ -244,5 +236,113 @@ def set_seed(sd=None):
 def _set_seed(sd=None):
     np.random.seed(sd)
     rd.seed(sd)
+
+
+#Move this to a separate plotting.py later if more additions happen later
+
+import matplotlib.pyplot as plt
+
+def plot_gradest_info(info_list, dims, mnlook=None, mxlook=None,
+              choose_plots=(0, 1, 2),
+              pscale_ratios=(1., 1., 1.),
+              plot_names=("Cosine Similarity", r"$\|\hat{g}_k\|/\|\nabla f(x)\|$",
+                          r"Normalized RMSE $\|\hat{g}_k -\nabla f(x)\|/\|\nabla f(x)\|$"),
+              vstack=True,
+              figsize=(12, 12),
+              minorxaxes=False,
+              minoryaxes=True
+              ):
+    """
+    info_list: list of (series, label) where series shape = (T, 3)
+               columns: [cosine_sim, norm_ratio, norm_rmse]
+    dims:      dimensionality used for expectation bounds
+    mnlook: min sample range.
+    mxlook:    max sample range
+    """
+
+    # ---------- prep ----------
+    ss = info_list[0][0].shape[0]
+    mnlook = 0 if mnlook is None else mnlook
+    mxlook = ss if mxlook is None else min(mxlook, ss)
+
+    plt.rc('grid', linestyle="-", color='white')
+    if not vstack: figsize = figsize[::-1]
+    fig = plt.figure(figsize=figsize)
+    cp = choose_plots
+    lps = len(cp)
+    if vstack:
+        gs = fig.add_gridspec(lps, 1, height_ratios=pscale_ratios, hspace=0.3, wspace=0.01)
+    else:
+        gs = fig.add_gridspec(1, lps, width_ratios=pscale_ratios, hspace=0.01, wspace=0.19)
+
+    c = 0
+
+    def _as(sharex=None, sharey=None):
+        nonlocal c
+
+        ax = fig.add_subplot(gs[c, 0] if vstack else gs[0, c], sharex=sharex, sharey=sharey)
+        c += 1
+        return ax
+
+    ax0 = _as()
+
+    x_vals = np.arange(mnlook, mxlook)
+
+    # ---------- plot raw series ----------
+    axes = {choose_plots[0]: ax0}
+    for i in choose_plots[1:]:
+        ax = _as(ax0)
+        axes[i] = ax
+    for i, ax in axes.items():
+        ax.grid(True, which='major', axis='both', linestyle='--', linewidth=0.9, color='lightgray')
+        if minorxaxes:
+            ax.minorticks_on()
+            ax.grid(True, which='minor', axis='x', linestyle=':', linewidth=0.7, color='lightgray')
+        if minoryaxes:
+            ax.minorticks_on()
+            ax.grid(True, which='minor', axis='y', linestyle=':', linewidth=0.7, color='lightgray')
+        for series, label, label_op in info_list:
+            S = series[mnlook:mxlook]  # raw
+            ax.plot(x_vals, S[:, i],
+                    label=f"{label}, {label_op(S, i)}")
+        ax.set_title(plot_names[i])
+        ax.set_xlabel("Samples")
+
+    if 0 in cp or 2 in cp:
+        # ---------- LMS MSE bound ----------
+        msebound = np.empty(ss, dtype=np.float64)
+        for i in range(ss):
+            msebound[i] = (1 - (1 / dims)) ** (i)
+
+    if 0 in cp:
+        ax0 = axes[0]
+        ax0.set_ylabel('Feasible Range')
+        ax0.set_ylim(0., 1.)
+        cosbound = np.sqrt(1 - msebound)
+        ax0.plot(x_vals, cosbound[mnlook:mxlook],
+                 label=r"$\mathbb{E}(\text{LMS})$, " + f"Final: {cosbound[mxlook - 1]:.3f}")
+    if 1 in cp:
+        axes[1].margins(y=0.05)
+        axes[1].set_ylabel('Norm Range')
+        # axes[1].set_ylim(0.01,5)
+
+    if 2 in cp:
+        ax2 = axes[2]
+        ax2.set_yscale('log')
+        ax2.set_ylabel("Log10")
+        ax2.margins(y=0.05)
+        ax2.plot(x_vals, msebound[mnlook:mxlook],
+                 label=r"$\mathbb{E}(\text{LMS})$, " + f"Final: {msebound[mxlook - 1]:.3f}")
+
+    if minoryaxes:
+        for v in axes.values():
+            v.grid(True, which='minor', axis='y', linestyle=':', linewidth=0.5)
+
+    # Legends
+    if len(info_list) > 1:
+        for v in axes.values():
+            v.legend()
+
+    return fig, axes
 
 

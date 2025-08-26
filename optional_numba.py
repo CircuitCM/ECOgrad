@@ -30,7 +30,7 @@ if importlib.util.find_spec("numba") is not None:
     #jtpic = nb.njit(**jit_pci)
 
     _rg = register_jitable
-    #rg = _rg(**jit_s)
+    rg = _rg(**jit_s)
     rgc = _rg(**jit_sc)
     rgi = _rg(**jit_si)
     rgic = _rg(**jit_sci)
@@ -46,7 +46,7 @@ if importlib.util.find_spec("numba") is not None:
     #ovsc = lambda impl: overload(impl, jit_options=jit_sc)
     #ovsic = lambda impl: overload(impl, jit_options=jit_sc, inline='always')
 else:
-    jtc=jtpc=rgc=rgi=rgic=lambda i:i
+    jtc=jtpc=rg=rgc=rgi=rgic=lambda i:i
     ovsi=lambda i:lambda s:s
 
 

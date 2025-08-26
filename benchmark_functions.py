@@ -24,6 +24,4 @@ def rosenbrock(x: np.ndarray) -> np.ndarray: return np.sum(
 rosen_grad = lambda x: np.pad(-400 * x[:-1] * (x[1:] - x[:-1] ** 2) - 2 * (1 - x[:-1]), (0, 1)) + np.pad(
     200 * (x[1:] - x[:-1] ** 2), (1, 0))
 
-# --- Assign value and gradient namespace
-value = mat_value
-grad = mat_grad
+
