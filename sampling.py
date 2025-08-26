@@ -38,13 +38,12 @@ def sample_sphere(S):
 
 def sample_orthog(x):
     """QR decomposition on standard normal produces orthogonal vectors that are also spread out uniformly on a sqrt(d) radius sphere's
-     d-1 dimensional surface.
+    d-1 dimensional surface.
 
     While Sphere surface sampling produces row vectors with norm = sqrt(# dims). Orthogonal row vectors produce columns that have norm = sqrt(# dims),
-     in addition to rows. As such the frobenius norm of a square Q = # dims exactly.
+    in addition to rows. As such the frobenius norm of a square Q = # dims exactly.
 
     Utilizing a full set of orthogonal vectors also amortizes the solution to a complete gradient interpolation.
-
     """
     sample_gauss(x) #this seems wrong double check later.
     Q, _ = np.linalg.qr(x[1:min(x.shape[0],x.shape[1])])
@@ -95,32 +94,3 @@ def side2_sample(x,S,f_eval,delta):
 def gradcross_sample(S,grad):
     return S@grad
 
-
-@nbu.jtc
-def calc_info(g_est: np.ndarray, g: np.ndarray,gn2:float, infor: np.ndarray) -> None:
-    """
-    Compute metrics between true vector x and estimator y.
-    Results are stored in outp as follows
-      0: Cosine similarity between x and y
-      1: Ratio of norms (||y||/||x||)
-      2: Normalized MSE (MSE / ||x||^2)
-
-    :param g_est: Gradient estimator vector.
-    :param g: True gradient.
-    :param gn2: Use the precalculated gradient norm.
-    :param infor: 3 element info array of floats.
-    """
-
-
-    nx2=0.
-    for v in g_est: nx2+= v * v
-    ny2=gn2
-    # ny2=0
-    # for v in g: ny2+= v * v
-    infor[0] = np.dot(g_est, g) / (nx2 * ny2) #Cosine sim
-    infor[1] = mt.sqrt(ny2 / nx2) #norm
-    rs=0.
-    for i in range(g.shape[0]):
-        r=g[i] - g_est[i]
-        rs+= r*r
-    infor[2] = rs/nx2 #MSE, can do rmse as well.

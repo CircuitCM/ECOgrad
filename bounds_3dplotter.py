@@ -5,6 +5,8 @@ import math as mt
 import datetime
 import os
 
+"""To run this script pyvista needs to be installed."""
+
 l2=np.linalg.norm
 
 def print_camera_position(p: pv.Plotter):

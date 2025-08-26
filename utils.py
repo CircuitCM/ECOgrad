@@ -205,4 +205,44 @@ def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, si
 
     return lam,lo,hi,2 if not op_bracket else 1 if ict==0 else 0
 
+@nbu.jtc
+def calc_info(g_est: np.ndarray, g: np.ndarray,gn2:float, infor: np.ndarray) -> None:
+    """
+    Compute metrics between true vector x and estimator y.
+    Results are stored in outp as follows
+      0: Cosine similarity between x and y
+      1: Ratio of norms (||y||/||x||)
+      2: Normalized MSE (MSE / ||x||^2)
+
+    :param g_est: Gradient estimator vector, in a temporary/copied array where memory can be edited.
+    :param g: True gradient.
+    :param gn2: Use the precalculated gradient norm.
+    :param infor: 3 element info array of floats.
+    """
+
+
+    nx2=np.dot(g_est,g_est)
+    ny2=gn2
+    # ny2=0
+    # for v in g: ny2+= v * v
+    infor[0] = np.dot(g_est, g) / (nx2 * ny2) #Cosine sim
+    infor[1] = mt.sqrt(ny2 / nx2) #norm ratio
+    #we will assume g_est can be edited, so we can calculate this efficiently, hopefully without array copies
+    g_est[:]-=g
+    g_est[:]*=g_est
+    rs=np.dot(g_est,g_est)
+    infor[2] = rs/nx2 #MSE, can do rmse as well.
+
+import random as rd
+
+def set_seed(sd=None):
+    np.random.seed(sd)
+    rd.seed(sd)
+    _set_seed(sd)
+
+@nbu.jtc
+def _set_seed(sd=None):
+    np.random.seed(sd)
+    rd.seed(sd)
+
 

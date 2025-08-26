@@ -6,25 +6,13 @@ import time as tm
 rng=np.random
 
 
-# --- Random d-dimensional twice differential surface.
-fA = None
-gA = None
-
-
-def random_gauss_surface(d):
-    global fA, gA
+def random_gauss_sqrmat(d):
     fA = rng.standard_normal((d, d), dtype=np.float64)
-    gA = fA + fA.T
-
-
+    return fA
 
 rnscl = .05
-
-
-def mat_value(x): return np.sum((x @ fA) * x, axis=1)  # + rng.standard_normal((x.shape[0],))*rnscl
-
-
-def mat_grad(x): return gA @ x
+def val_sqrmat(x,A): return np.sum((x @ A) * x, axis=1)  # + rng.standard_normal((x.shape[0],))*rnscl
+def grad_sqrmat(x,A): return (A+A.T) @ x
 
 
 # --- Rosenbrock (hard version)
