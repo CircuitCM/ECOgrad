@@ -19,10 +19,10 @@ if importlib.util.find_spec("numba") is not None:
     jit_pi = jit_p | dict(inline='always')
     jit_pci = jit_pi | dict(cache=True)
 
-    #jt = nb.njit(**jit_s)
+    jt = nb.njit(**jit_s)
     jtc = nb.njit(**jit_sc)
     #jti = nb.njit(**jit_si)
-    #jtic = nb.njit(**jit_sci)
+    jtic = nb.njit(**jit_sci)
 
     #jtp = nb.njit(**jit_p)
     jtpc = nb.njit(**jit_pc)
@@ -41,13 +41,13 @@ if importlib.util.find_spec("numba") is not None:
     #rgpic = _rg(**jit_pci)
 
     # I'm pretty sure caching is redundant for overloads.
-    #ovs = lambda impl: overload(impl, jit_options=jit_s)
+    ovs = lambda impl: overload(impl, jit_options=jit_s)
     ovsi = lambda impl: overload(impl, jit_options=jit_s, inline='always')
     #ovsc = lambda impl: overload(impl, jit_options=jit_sc)
     #ovsic = lambda impl: overload(impl, jit_options=jit_sc, inline='always')
 else:
     jtc=jtpc=rg=rgc=rgi=rgic=lambda i:i
-    ovsi=lambda i:lambda s:s
+    ovsi=ovs=lambda i:lambda s:s
 
 
 def op_call_args(cal,args):
@@ -63,7 +63,7 @@ def op_call_args(cal,args):
     return cal[0](args,*cal[1:])
 
 
-@ovsi(op_call_args)
+@ovs(op_call_args)
 def _op_call_args(cal,args):
     ct=isinstance(cal,types.Callable) #otherwise tuple|list
     rt=isinstance(args,types.BaseTuple|types.LiteralList) #otherwise single element.
@@ -76,3 +76,16 @@ def _op_call_args(cal,args):
         return lambda cal,args: cal[0](*args,*cal[1:])
     #if not ct and not rt:
     return lambda cal,args: cal[0](args,*cal[1:])
+@jtc
+def tst(a,b,c):
+    print(a,b,c)
+
+
+@jtc
+def tst2(a):
+    ts=(tst,'yes')
+    op_call_args(ts,a)
+
+if __name__ == "__main__":
+    #tst2(1)
+    tst2((1,2))

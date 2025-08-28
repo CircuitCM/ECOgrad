@@ -21,9 +21,9 @@ def alpha_to_sigma(alpha: float,side2=True) -> float:
     # ⇒ k = √2 · erfinv(1 – α)
     return math.sqrt(2) * sp.erfinv(1 - (1 if side2 else 2)*alpha)
 
-@nbu.rgic
+@nbu.jtic
 def marks_reset_factor(cn,ugh, ngh, v, c, d, a=3., sig=0., b=1.,t_buffer=True,r=-2.):
-    """
+    r"""
     
     :param cn: The N-RMSE that we optimize/estimate to accommodate the new directional derivative. 
     :param ugh:  u^T·ĝ direction vector dot gradient estimator
@@ -64,7 +64,7 @@ def marks_reset_factor(cn,ugh, ngh, v, c, d, a=3., sig=0., b=1.,t_buffer=True,r=
 
 @nbu.rgic
 def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=False):
-    """
+    r"""
     Extended Marks ratio, includes the noise factor and student's t interval buffer for initial eigen value/predictor asymmetry. We also use the arithmetic form, so > 0 implies anomaly instead of >1.
 
     :param ugh:  u^T·ĝ direction vector dot gradient estimator
@@ -92,20 +92,29 @@ def marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., t_buffer=True,ratio_form=
         return (ugh - v) ** 2 - gamult - nf * nf  # IF > 0 implies violation
     else:
         return abs(ugh - v)/mt.sqrt(gamult + nf * nf) # IF > 1 implies violation
-    
+
+
 
 @nbu.jtc
 def marks_shrinkage_reset_solution(ugh, ngh, v, c, d, a=3., sig=0., b=1.,r=-2,t_buffer=True,max_iters=12,co_tol=1e-6):
+    """ A solution method to the marks ratio with optional t-dist buffering and noise. Utilizes an accelerated bracketed secant method.
+
+    NOTE For the secant method:
+    co_tol is - abs(x-x_prev)<co_tol, and not abs(f(x))<co_tol because the units of f(x) and change in f(x) can be very extreme.
+
+    """
+    #NOTE: co_tol is - abs(x-x_prev)<co_tol, and not abs(f(x))<co_tol because the units of f(x) and change in f(x) can be very extreme.
+    #However the root finding bounds have a much more limited scope.
     if ngh==0.: c,max(2 * mt.log(c) / mt.log1p(-1 / d), 2.)
     m_op=(marks_reset_factor,ugh,ngh,v,c,d,a,sig,b,t_buffer,-abs(r))
     mnc =1.#max(1. + min(-1 / d + 1e-15, 0.), .9999)
     if (ugh+v)<abs(ugh-v):br_rate=2/3 #Tends to be more well behaved because shrinkage will be more effective so boosted bracketing rate.
-    else:br_rate=4/9 #otherwise there is an increased chance of multiple roots so take it slower
+    else:br_rate=4/9 #otherwise there is an increased chance of multiple roots so take it slower. In practice 2/3rd seems to work fine for this too.
     #print(f' Solution Args: ', ", ".join(str(i) for i in (ugh, ngh, v, c, d, a, sig, b, t_buffer, -abs(r))))
     cn,lcn,hcn,reasn=signseeking_secant_v2(m_op,c,mnc,br_rate=br_rate,er_tol=co_tol,max_iters=max_iters,sign=-1)
     #print('positive curvature solution. c:',c,'lcn:',lcn,'hcn:',hcn,'reason:',reasn)
 
-    # ##Note it turns out this third root scenario is so rare empirically, that I've never seen it actually happen, so I'm commenting out.
+    ### Note it turns out this third root scenario is so rare empirically, that I've never seen an example where it actually happen, so I'm commenting out.
     # if t_buffer and (mnc - (lcn + hcn) / 2.) < .01 and reasn < 2:
     #     #We need to check that this didn't land on the 3rd t-limit left root
     #     #print('Launching on t_buffer c before:',cn,c,lcn,'marks ratio',marks_ratio(ugh,ngh,v,hcn,d,a,sig,b,t_buffer),'ugh',ugh,'v',v,'ngh',ngh,)
@@ -128,7 +137,7 @@ def shrink_gradestimate(g,cn,c):
     g[:]*=mt.sqrt((1.-cn**2)/(1-c**2))
     return g
 
-@nbu.rg
+@nbu.rgic
 def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, sign=1):
     """A bracketed secant method that achieves (empirically) faster convergence by knowing the sign of the function to the left and right of the root.
     It also allows us to select if the slope of our root is positive or negative when there are multiple roots.
@@ -181,7 +190,12 @@ def signseeking_secant_v2(f_op, lo, hi,br_rate=.5, er_tol=1e-8, max_iters=20, si
             lamo = lam
             lam = lamn
             lamb=(lo*lrt + hi*hrt)
-            ll,lh=((lo,lamb) if sign==-1 else (lamb,hi)) if not op_bracket else (lo,hi)
+            ll, lh = ((lo, lamb) if sign == -1 else (lamb, hi)) if not op_bracket else (lo, hi)
+            # if op_bracket:
+            #     ll,lh=lo,hi
+            # else:
+            #     ll,lh=((lo,lamb) if sign==-1 else (lamb,hi))
+
             if not (ll<lam< lh): lam = lamb
 
         f = nbu.op_call_args(f_op,lam)
@@ -217,13 +231,13 @@ def calc_info(g_est: np.ndarray, g: np.ndarray,gn2:float, infor: np.ndarray) -> 
     ny2=gn2
     # ny2=0
     # for v in g: ny2+= v * v
-    infor[0] = np.dot(g_est, g) / (nx2 * ny2) #Cosine sim
-    infor[1] = mt.sqrt(ny2 / nx2) #norm ratio
+    infor[0] = np.dot(g_est, g) / mt.sqrt(nx2 * ny2) #Cosine sim
+    infor[1] = mt.sqrt(nx2 / ny2) #norm ratio
     #we will assume g_est can be edited, so we can calculate this efficiently, hopefully without array copies
     g_est[:]-=g
-    g_est[:]*=g_est
+    #g_est[:]*=g_est
     rs=np.dot(g_est,g_est)
-    infor[2] = rs/nx2 #MSE, can do rmse as well.
+    infor[2] = mt.sqrt(rs/ny2) #N-RMSE, root so that the order of the error matches the order of the average parameter value.
 
 import random as rd
 
@@ -234,8 +248,9 @@ def set_seed(sd=None):
 
 @nbu.jtc
 def _set_seed(sd=None):
-    np.random.seed(sd)
-    rd.seed(sd)
+    if sd is not None:
+        np.random.seed(sd)
+        rd.seed(sd)
 
 
 #Move this to a separate plotting.py later if more additions happen later
@@ -310,15 +325,15 @@ def plot_gradest_info(info_list, dims, mnlook=None, mxlook=None,
 
     if 0 in cp or 2 in cp:
         # ---------- LMS MSE bound ----------
-        msebound = np.empty(ss, dtype=np.float64)
+        rmsebound = np.empty(ss, dtype=np.float64)
         for i in range(ss):
-            msebound[i] = (1 - (1 / dims)) ** (i)
+            rmsebound[i] = (1 - (1 / dims)) ** (i / 2)
 
     if 0 in cp:
         ax0 = axes[0]
         ax0.set_ylabel('Feasible Range')
         ax0.set_ylim(0., 1.)
-        cosbound = np.sqrt(1 - msebound)
+        cosbound = np.sqrt(1 - rmsebound * rmsebound)
         ax0.plot(x_vals, cosbound[mnlook:mxlook],
                  label=r"$\mathbb{E}(\text{LMS})$, " + f"Final: {cosbound[mxlook - 1]:.3f}")
     if 1 in cp:
@@ -331,8 +346,8 @@ def plot_gradest_info(info_list, dims, mnlook=None, mxlook=None,
         ax2.set_yscale('log')
         ax2.set_ylabel("Log10")
         ax2.margins(y=0.05)
-        ax2.plot(x_vals, msebound[mnlook:mxlook],
-                 label=r"$\mathbb{E}(\text{LMS})$, " + f"Final: {msebound[mxlook - 1]:.3f}")
+        ax2.plot(x_vals, rmsebound[mnlook:mxlook],
+                 label=r"$\mathbb{E}(\text{LMS})$, " + f"Final: {rmsebound[mxlook - 1]:.3f}")
 
     if minoryaxes:
         for v in axes.values():

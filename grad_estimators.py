@@ -18,10 +18,9 @@ def simple_averager(c,S,truegrad, bias_type=0):
     :return: info_array
     """
     dms = S.shape[1]
+    dmf=float(dms)
     smps=S.shape[0]
     gn2=np.dot(truegrad,truegrad)
-    # We translate directional derivative samples into stochastic approximators, easiest way:
-    c *= dms
 
     g_est = np.zeros((dms,),dtype=np.float64)# np.zeros_like(S[0])  # grad update mem
     g_tmp = np.zeros((dms,), dtype=np.float64)
@@ -30,21 +29,30 @@ def simple_averager(c,S,truegrad, bias_type=0):
     for i in range(smps):
         # We translate directional derivative samples into stochastic approximators, so dim scale:
         #g_est += c[i] * S[i]*dms
-        #It would be a bit faster in numba to write our own loops here, but that would be prohibitively slow in the python interpreter.
-        g_est[:]*=(1 - (1/(i+1)))
-        np.dot(c[i]*dms*(1/(i+1)),S[i],out=g_tmp)
+        #It would be a bit in numba to write our own loops here, but that would be prohibitively slow in the python interpreter.
+        ii=i+1.
+        fi=1./ii
+        g_est[:]*=(1. - fi)
+        sc=c[i]*dmf*fi
+        g_tmp[:]=S[i]
+        g_tmp[:]*=sc
         g_est[:]+=g_tmp
         g_tmp[:]=g_est
-        bcorrect = ((i + 1) / (i + dms + 2)) if bias_type == 0 else mt.sqrt(((i + 1) / (i + dms + 2))) if bias_type == 1 else 1.
-        g_tmp[:]*=bcorrect
-        ut.calc_info(g_tmp,truegrad, gn2,info_array[i])
+        if bias_type != 2:
+            cm=(ii / (ii + dmf + 1.))
+            if bias_type==1:cm=mt.sqrt(cm)
+            g_tmp[:] *= cm
+        ut.calc_info(g_tmp,truegrad,gn2,info_array[i])
     return info_array
 
+
+
 @nbu.jtc
-def simple_leastchg(c,S,truegrad, bias_type=0):
+def simple_leastchg(v, S, truegrad, bias_type=0):
+
     """
 
-    :param c: 1D array of slopes or approximate slopes of truegrad along S.
+    :param v: 1D array of slopes or approximate slopes of truegrad along S.
     :param S: The directional sample vectors, (# samples, # parameters). Scaled to be at least proportional to ||S[i]||_2 = 1.
     :param truegrad: The true gradient used to benchmark the .
     :param bias_type: 0 - MSE/RMSE minimization (no adjustment), 1 - Matching norm adjustment, 2 - unadjusted: norm is biased large (to match monte carlo everager).
@@ -62,13 +70,13 @@ def simple_leastchg(c,S,truegrad, bias_type=0):
     # raw monte carlo everaging adjustment $=1-(1-d^{-1})^k$
     # s=2
     for i in range(smps):
-        er = c[i] - S[i].dot(g_est)
+        er = v[i] - S[i].dot(g_est)
         g_tmp[:]=S[i]
         g_tmp[:]*=(er / 1.0)#for true directional samples S[i].dot(S[i]) = 1.0 always, however we might use samples such that S[i].dot(S[i]) is = 1 only on average, therefore we might want to see the degradation in the raw LMS update which is why it's removed from the denominator. You can use the block least change update with block size = 1 to compare.
         g_est[:] += g_tmp
         g_tmp[:] = g_est
         if bias_type != 0:
-            bc=1. / (1. - cm ** (i + 1))
+            bc=1. / (1. - cm ** (i + 1.))
             if bias_type == 1: bc=mt.sqrt(bc)
             g_tmp[:]*= bc
         ut.calc_info(g_tmp,truegrad,gn2, info_array[i])
@@ -117,10 +125,11 @@ def ext_marks_ratio(ugh, ngh, v, c, d, a=3., sig=0., b=1., m=1., q=1.):
 from utils import marks_ratio, marks_shrinkage_reset_solution, shrink_gradestimate
 
 
-def stationary_lms_eco(x, rng_func, sample_func, use_delta=False, bias_type=0, eps=2 ** (-51 / 2), truegrad=None,
-                       alpha=3.,
-                       b=1., sig=0., partial_reset=False, t_buffer=True,
-                       ):
+
+
+@nbu.jtc
+def stationary_lms_eco(v,S,truegrad, bias_type=0, eps=2 ** (-51 / 2),
+                       alpha=3., b=1., sig=0., partial_reset=False, t_buffer=True,emetrics=True):
     """
     Error Correcting Optimization framework for broyden updated gradients. Stationary testing. Uses Marks Ratio
 
@@ -133,39 +142,32 @@ def stationary_lms_eco(x, rng_func, sample_func, use_delta=False, bias_type=0, e
     :param truegrad: None - it will generate the true grad from the assigned `grad` func.
     :return: info_array
     """
-    x = rng_func(x)  # pre-init samples
-    x, d = make_prox(x, eps)
-    U, v = sample_func(x, d if use_delta else None)
-    dms = U.shape[1]
+    dms = S.shape[1]
+    cm = 1. - 1. / dms
+    smps = S.shape[0]
+    gn2 = np.dot(truegrad, truegrad)
+
+    g_est = np.zeros((dms,), dtype=np.float64)  # np.zeros_like(S[0])  # grad update mem
+    g_tmp = np.zeros((dms,), dtype=np.float64)
+    info_array = np.empty((smps, 3), dtype=np.float64)  # info array
+
     if alpha is None or alpha > (dms ** .5): alpha = dms ** .5
 
-    g = np.zeros_like(x[0])  # grad update mem
-    info_array = np.empty((U.shape[0], 3), dtype=np.float64)  # info array
-
-    if truegrad == None:
-        truegrad = grad(x[0])  # needed for measurements
     ct = 1
-    # cbase=((1-(1/dms))**.5)
-    l = 1.
-    cmult = (1 - (1 / dms)) ** .5
-    oc = c = 1  # *cmult
-    # c2=(1-(1/dms))**ct
     rm = 0
     sig2 = sig ** 2
-    for i in range(U.shape[0]):
-        ngh2 = g.dot(g)
-        if True:
-            if c == 1:
-                l = 1.
-                cmult = (1 - (1 / dms)) ** .5
-            else:
-                u = ((c * c) * ngh2) / (dms * (1 - c * c))
-                l = u / (u + sig2)
-                # if i%100==0:print(i,l)
-                cmult = (1 - (l / dms)) ** .5
+    c=1.
+    for i in range(S.shape[0]):
+        ngh2 = g_est.dot(g_est)
+        if sig==0. or c == 1:
+            l = 1.
+            cmult = (1 - (1 / dms)) ** .5
+        else:
+            u = ((c * c) * ngh2) / (dms * (1 - c * c))
+            l = u / (u + sig2)
+            cmult = (1 - (l / dms)) ** .5
         ngh = ngh2 ** .5
-        ugh = U[i].dot(g)
-        # c=c*cmult
+        ugh = S[i].dot(g_est)
         r = marks_ratio(ugh, ngh, v[i], c, dms, alpha, sig, b, t_buffer, False)
 
         if r > 0:
@@ -177,10 +179,10 @@ def stationary_lms_eco(x, rng_func, sample_func, use_delta=False, bias_type=0, e
                 c, s = marks_shrinkage_reset_solution(ugh, ngh, v[i], c, dms, alpha, sig, b, r, t_buffer)
                 # print('Partial Reset Occurred: ',i,'oc',oc,'c',c,'r',r,'t_buffer',t_buffer)
                 sd = mt.sqrt((1 - c ** 2) / (1 - oc ** 2))
-                g *= sd
+                g_est[:] *= sd
                 ugh *= sd
             else:
-                g[:] = 0
+                g_est[:] = 0
                 ugh = 0.
                 c = 1  # *cmult
         else:
@@ -188,10 +190,16 @@ def stationary_lms_eco(x, rng_func, sample_func, use_delta=False, bias_type=0, e
         er = v[i] - ugh
         # if i%250==1:
         #     print(i,'oc',oc,'c',c,'r',r)
-        g = g + (er * l / 1.0) * U[i]  # for true directional samples U[i].dot(U[i]) = 1.0 always.
-        bcorrect = 1 if bias_type == 0 else 1 / mt.sqrt(1 - c ** 2) if bias_type == 1 else 1 / (1 - c ** 2)
-        gt = g * bcorrect
-        calc_info(truegrad, gt, info_array[i])
-    print('max r', rm, 'total resets', ct, ', False Positives Rate:', ct / U.shape[0])
+        g_tmp[:]=S[i]
+        g_tmp[:]*=(er * l / 1.0)
+        g_est[:]+=g_tmp
+        g_tmp[:]=g_est
+        if bias_type != 0:
+            bc=1. / (1. - cm ** (i + 1.))
+            if bias_type == 1: bc=mt.sqrt(bc)
+            g_tmp[:]*= bc
+        ut.calc_info(g_tmp, truegrad, gn2, info_array[i])
+    if emetrics: #we say false positive rate as this is a stationary benchmark with a single true gradient.
+        print('Largest Bound Violation:', rm, 'Total Bound Violations', ct, ', False Positives Rate:', ct / S.shape[0])
     return info_array
 

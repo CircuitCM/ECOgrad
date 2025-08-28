@@ -2,11 +2,13 @@
 import numpy as np
 import math as mt
 import optional_numba as nbu
+import utils as ut
 rng = np.random.default_rng()
 
 def set_seed(s=None):
     global rng
     rng = np.random.default_rng(s)
+    ut.set_seed(s)
 
 def least_eps_delta(x,eps=2**(-52/2)):
     """The smallest scalar delta such that the largest floating point parameter can be represented to epsilon relative width.
@@ -32,8 +34,9 @@ def sample_sphere(S):
     As the # of dimensions increases, 'standard normal' sampling converges to an exact sqrt() surface radius in O(d^(-1/2)) time.
     """
     sample_gauss(S)
-    nms=np.linalg.norm(S,axis=1)/mt.sqrt(S.shape[1])
-    S[:]=(S.T/nms).T
+    nms=np.linalg.norm(S,axis=1)#/mt.sqrt(S.shape[1])
+    S.T[:]/=nms
+    #S[:]=(S.T/nms).T
     return S
 
 def sample_orthog(x):

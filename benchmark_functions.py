@@ -7,7 +7,7 @@ rng=np.random
 
 
 def random_gauss_sqrmat(d):
-    fA = rng.standard_normal((d, d), dtype=np.float64)
+    fA = rng.standard_normal((d, d))
     return fA
 
 rnscl = .05
